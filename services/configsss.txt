@@ -1,0 +1,4 @@
+hugging face token = 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
+phi = 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
+
+

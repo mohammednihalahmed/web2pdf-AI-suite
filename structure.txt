@@ -1,0 +1,1023 @@
+chatbot_api/
+├── main.py             (FastAPI app entry)
+├── api/                (API endpoints)
+│    ├── chat.py
+│    ├── upload_pdf.py
+│    ├── generate_convo_pdf.py
+│    └── web2pdf.py
+├── services/           (Python backend logic)
+│    ├── chatbot_service.py
+│    ├── pdf_service.py
+│    ├── web2pdf_service.py
+│    └── summarizer_service.py
+├── models/             (Request and Response schemas)
+│    ├── chat_models.py
+│    ├── pdf_models.py
+├── utils/              (Helper functions like file save, etc.)
+├── requirements.txt    (Dependencies)
+└── README.md           (Basic instructions)
+
+
+
+import React, { useState } from "react";
+import { useAuth } from "../context/AuthContext"; // To get user data (if needed)
+
+const Sidebar = ({ chats, handleUploadPdf }) => {
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedChat, setSelectedChat] = useState(null); // To track the currently selected chat
+
+  // Toggle Sidebar
+  const toggleSidebar = () => {
+    setSidebarOpen(!isSidebarOpen);
+  };
+
+  // Handle Chat Options (Rename/Delete)
+  const handleChatOption = (chat, option) => {
+    if (option === "rename") {
+      const newName = prompt("Enter new chat name:", chat.name);
+      if (newName) {
+        // Update chat name logic (you could update state or send to backend)
+        chat.name = newName;
+      }
+    } else if (option === "delete") {
+      const confirmDelete = window.confirm(`Are you sure you want to delete chat "${chat.name}"?`);
+      if (confirmDelete) {
+        // Delete chat logic (update state or send to backend)
+        alert("Chat deleted!");
+      }
+    }
+  };
+
+  return (
+    <>
+      {/* Sidebar toggle button */}
+      <button
+        className="fixed top-4 left-4 p-2 text-white bg-blue-600 rounded-full"
+        onClick={toggleSidebar}
+      >
+        ☰
+      </button>
+
+      {/* Sidebar Overlay */}
+      <div
+        className={`fixed inset-0 bg-gray-800 bg-opacity-50 ${
+          isSidebarOpen ? "block" : "hidden"
+        }`}
+        onClick={toggleSidebar}
+      ></div>
+
+      {/* Sidebar Content */}
+      <div
+        className={`fixed left-0 top-0 h-full bg-gray-900 text-white w-64 p-4 transition-transform duration-300 ${
+          isSidebarOpen ? "transform-none" : "transform -translate-x-full"
+        }`}
+      >
+        {/* Sidebar Header */}
+        <h3 className="text-xl mb-4">Your Chats</h3>
+
+        {/* List of Chats */}
+        {chats.length > 0 ? (
+          chats.map((chatGroup, idx) => (
+            <div key={idx} className="mb-4">
+              <h4 className="text-lg mb-2">{chatGroup.date}</h4>
+              <ul>
+                {chatGroup.chats.map((chat, index) => (
+                  <li key={index} className="flex justify-between items-center py-2">
+                    <span>{chat.name}</span>
+                    <div
+                      className="cursor-pointer"
+                      onClick={() => setSelectedChat(chat)}
+                    >
+                      ⋮ {/* Three dots icon */}
+                    </div>
+
+                    {/* Dropdown for Rename/Delete */}
+                    {selectedChat === chat && (
+                      <div className="absolute left-16 bg-white text-black p-2 rounded-lg shadow-md">
+                        <div
+                          className="cursor-pointer py-1 hover:bg-gray-200"
+                          onClick={() => handleChatOption(chat, "rename")}
+                        >
+                          Rename
+                        </div>
+                        <div
+                          className="cursor-pointer py-1 hover:bg-gray-200"
+                          onClick={() => handleChatOption(chat, "delete")}
+                        >
+                          Delete
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        ) : (
+          <p>No chats yet!</p>
+        )}
+
+        {/* Upload PDF Button */}
+        <div className="mt-4">
+          <input
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            id="pdf-upload"
+            onChange={handleUploadPdf}
+          />
+          <label
+            htmlFor="pdf-upload"
+            className="w-full text-center py-2 px-4 bg-blue-600 text-white rounded-lg cursor-pointer"
+          >
+            Upload PDF
+          </label>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Sidebar;
+
+
+chatbot_service.js 
+
+import React, { useState, useEffect } from "react";
+import Sidebar from "../components/Sidebar"; 
+import { useAuth } from "../context/AuthContext"; 
+import axios from "axios";
+
+const Chatbot = () => {
+  const { user, logout } = useAuth();
+  const [chats, setChats] = useState([]);
+  const [currentChat, setCurrentChat] = useState(null);
+  const [userInput, setUserInput] = useState("");
+  const [pdfMode, setPdfMode] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState(null);
+
+  // Fetch chat history when component mounts
+  useEffect(() => {
+    const fetchChats = async () => {
+      try {
+        const response = await axios.get("/api/chats", {
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+        });
+        setChats(response.data); // Store fetched chats
+      } catch (error) {
+        console.error("Error fetching chat history:", error);
+      }
+    };
+
+    fetchChats();
+  }, [user]);
+
+  // Handle user input for chatbot
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (userInput.trim() !== "") {
+      const newMessage = {
+        user_input: userInput,
+        chat_id: currentChat.id,
+        pdf_mode: pdfMode,
+        chunk_filename: selectedPdf, // If using PDF mode
+      };
+
+      try {
+        const response = await axios.post("/api/chat", newMessage, {
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+        });
+        // Append the response from the backend to the current chat
+        const updatedChats = chats.map(chat => 
+          chat.id === currentChat.id
+            ? { ...chat, messages: [...chat.messages, response.data] }
+            : chat
+        );
+        setChats(updatedChats);
+        setUserInput("");
+      } catch (error) {
+        console.error("Error sending message:", error);
+      }
+    }
+  };
+
+  // Handle PDF file selection
+  const handlePdfSelection = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedPdf(file.name);
+    }
+  };
+
+  // Toggle between general mode and PDF mode
+  const togglePdfMode = () => {
+    setPdfMode((prevMode) => !prevMode);
+    setSelectedPdf(null); // Reset PDF selection if switching to general mode
+  };
+
+  return (
+    <div className="flex">
+      <Sidebar chats={chats} setChats={setChats} user={user} />
+      <div className="flex-grow p-4 bg-gray-50">
+        <div className="flex justify-between items-center border-b pb-4 mb-4">
+          <div className="text-xl font-semibold">Chatbot</div>
+          <button
+            onClick={logout}
+            className="bg-red-600 text-white py-2 px-4 rounded-md"
+          >
+            Logout
+          </button>
+        </div>
+
+        {/* Chat Mode Toggle */}
+        <div className="flex items-center space-x-4 mb-4">
+          <label htmlFor="pdfMode" className="text-sm text-gray-700">
+            PDF Mode
+          </label>
+          <input
+            id="pdfMode"
+            type="checkbox"
+            checked={pdfMode}
+            onChange={togglePdfMode}
+            className="toggle-checkbox"
+          />
+        </div>
+
+        {pdfMode && (
+          <div className="mb-4">
+            <input
+              type="file"
+              onChange={handlePdfSelection}
+              accept="application/pdf"
+              className="file-input"
+            />
+            {selectedPdf && (
+              <div className="mt-2 text-sm text-gray-500">
+                Selected PDF: {selectedPdf}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chat Messages */}
+        <div className="space-y-4 mb-4">
+          {currentChat && currentChat.messages.map((message, index) => (
+            <div key={index} className="bg-white p-4 rounded-lg shadow-md">
+              <div className="text-gray-600 text-sm">{message.date}</div>
+              <div className="mt-2 text-lg">{message.text}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* User Input Area */}
+        <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+          <input
+            type="text"
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            placeholder="Ask something..."
+            className="w-full p-3 rounded-md border border-gray-300"
+          />
+          <button
+            type="submit"
+            className="bg-blue-600 text-white py-2 px-4 rounded-md"
+          >
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Chatbot;
+
+
+
+services/process_pdf.py :
+
+import os
+import pickle
+import fitz  # PyMuPDF
+import torch
+from tqdm import tqdm
+from colbert.modeling.checkpoint import Checkpoint
+from colbert.infra.config import ColBERTConfig
+from colbert.indexer import Indexer
+from configs.paths import TEXT_STORAGE_PATH
+from pathlib import Path
+from services.progress_manager import update_progress, set_model_active
+
+# Paths
+UPLOAD_FOLDER = "/home/noyo/web2pdf/services/uploads"
+COLBERT_INDEX_PATH = "/home/noyo/web2pdf/services/experiments/default/indexes/colbert_index"
+CHECKPOINT_PATH = "/home/noyo/web2pdf/models/colbertv2.0"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Ensure CUDA is available
+print(f"Using device: {DEVICE}")
+
+# Initialize ColBERTConfig with specific parameters
+colbert_config = ColBERTConfig(
+    nbits=2,  
+    doc_maxlen=140,  
+    kmeans_niters=4,  
+    nway=2,
+    gpus=1  # Explicitly set GPU count to avoid 'NoneType' error
+)
+
+# Load ColBERT checkpoint
+checkpoint = Checkpoint(CHECKPOINT_PATH, colbert_config=colbert_config)
+
+class PDFProcessor:
+    def __init__(self, chunk_size=512, chunk_overlap=50):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.text_chunks = []
+
+    def extract_text(self, pdf_path):
+        """Extracts text from a PDF file."""
+        doc = fitz.open(pdf_path)
+        texts = []
+
+        print(f"Processing: {pdf_path} ({len(doc)} pages)")
+        for page in tqdm(doc, desc="Extracting Pages", leave=False):
+            texts.append(page.get_text("text").replace("\n", " ").strip())
+
+        return " ".join(texts)
+
+    def chunk_text(self, text):
+        """Splits text into overlapping chunks."""
+        words = text.split(" ")
+        chunks = []
+        i = 0
+
+        while i < len(words):
+            chunk = " ".join(words[i:i + self.chunk_size])
+            chunks.append(chunk)
+            i += self.chunk_size - self.chunk_overlap
+
+        return chunks
+
+    def process_and_store(self, pdf_path):
+        """Extracts, chunks, and indexes text using ColBERT."""
+        text = self.extract_text(pdf_path)
+        chunks = self.chunk_text(text)
+
+        # Generate a unique path for storing text chunks for this specific PDF
+        pdf_filename = Path(pdf_path).stem  # Get the PDF file's name without extension
+        text_chunks_file = f"{pdf_filename}_text_chunks.pkl"
+        text_chunks_path = os.path.join(UPLOAD_FOLDER, text_chunks_file)
+
+        # Save processed text chunks for this specific PDF
+        with open(text_chunks_path, "wb") as f:
+            pickle.dump(chunks, f)
+
+        # Global text chunks storage (optional)
+        if os.path.exists(TEXT_STORAGE_PATH):
+            with open(TEXT_STORAGE_PATH, "rb") as f:
+                self.text_chunks = pickle.load(f)
+
+        self.text_chunks.extend(chunks)
+
+        # Save the global collection of text chunks
+        with open(TEXT_STORAGE_PATH, "wb") as f:
+            pickle.dump(self.text_chunks, f)
+
+        # Ensure index directory exists
+        os.makedirs(COLBERT_INDEX_PATH, exist_ok=True)
+
+        # Initialize ColBERT Indexer
+        indexer = Indexer(checkpoint=CHECKPOINT_PATH)
+
+        print(f"Starting indexing with {len(chunks)} chunks...")
+
+        # Index the chunks with ColBERT
+        indexer.index(
+            name=COLBERT_INDEX_PATH,
+            collection=self.text_chunks,
+            overwrite=True
+        )
+
+        print(f"Indexed {len(chunks)} chunks with ColBERT.")
+
+# Process PDFs (for testing)
+if __name__ == "__main__":
+    processor = PDFProcessor()
+    for pdf_file in os.listdir(UPLOAD_FOLDER):
+        if pdf_file.endswith(".pdf"):
+            pdf_path = os.path.join(UPLOAD_FOLDER, pdf_file)
+            processor.process_and_store(pdf_path)
+
+
+
+
+
+Sidebar.js :
+
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from 'react-router-dom';
+
+// UploadProgressModal Component
+const UploadProgressModal = ({ isVisible }) => {
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+      <div className="bg-white px-6 py-4 rounded-lg shadow-md text-center">
+        <p className="text-gray-800 font-semibold text-lg mb-2">Processing PDF...</p>
+        <p className="text-sm text-gray-600">Please wait while your file is being uploaded and processed.</p>
+      </div>
+    </div>
+  );
+};
+
+// Sidebar component
+const Sidebar = () => {
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [chats, setChats] = useState([]);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [showUploadProgress, setShowUploadProgress] = useState(false);
+  const dropdownRef = useRef(null);
+  const navigate = useNavigate();
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!isSidebarOpen);
+  };
+
+  const fetchChats = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch("/chats", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      setChats(data);
+    } catch (error) {
+      console.error("Error fetching chats:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchChats();
+  }, []);
+
+  const handleChatOption = async (chat, option) => {
+    const token = localStorage.getItem("token");
+
+    if (option === "rename") {
+      const newName = prompt("Enter new chat name:", chat.name);
+      if (newName) {
+        try {
+          const response = await fetch(`/chats/${chat.id}?new_name=${newName}`, {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          const updatedChat = await response.json();
+          setChats((prevChats) =>
+            prevChats.map((group) => ({
+              ...group,
+              chats: group.chats.map((c) => (c.id === chat.id ? updatedChat : c)),
+            }))
+          );
+        } catch (error) {
+          console.error("Error renaming chat:", error);
+        }
+      }
+    } else if (option === "delete") {
+      const confirmDelete = window.confirm(`Are you sure you want to delete chat "${chat.name}"?`);
+      if (confirmDelete) {
+        try {
+          const response = await fetch(`/chats/${chat.id}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          await response.json();
+          setChats((prevChats) =>
+            prevChats.map((group) => ({
+              ...group,
+              chats: group.chats.filter((c) => c.id !== chat.id),
+            }))
+          );
+        } catch (error) {
+          console.error("Error deleting chat:", error);
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownVisible(false);
+      }
+    };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
+  const handleUploadPdf = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setShowUploadProgress(true); // Show loading modal
+    const formData = new FormData();
+    formData.append("file", file);
+    const token = localStorage.getItem("token");
+
+    try {
+      const res = await fetch("/upload_pdf/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        console.error("Upload failed");
+        setShowUploadProgress(false);
+        return;
+      }
+
+      const { filename } = await res.json();
+      setShowUploadProgress(false);
+      navigate("/chatbot"); // or navigate somewhere after processing is done
+    } catch (error) {
+      console.error("Upload error:", error);
+      setShowUploadProgress(false);
+    }
+  };
+
+  return (
+    <>
+      <UploadProgressModal isVisible={showUploadProgress} />
+
+      <button
+        className="fixed top-4 left-4 p-2 text-white bg-gray-800 rounded-full shadow-lg"
+        onClick={toggleSidebar}
+      >
+        ☰
+      </button>
+
+      <div
+        className={`fixed inset-0 bg-gray-800 bg-opacity-60 ${isSidebarOpen ? "block" : "hidden"}`}
+        onClick={toggleSidebar}
+      ></div>
+
+      <div
+        className={`fixed left-0 top-0 h-full bg-gray-900 text-white w-64 p-6 transition-transform duration-300 ${
+          isSidebarOpen ? "transform-none" : "transform -translate-x-full"
+        }`}
+      >
+        <h3 className="text-2xl font-semibold text-gray-200 mb-4">Your Chats</h3>
+
+        {chats.length > 0 ? (
+          chats.map((chatGroup, idx) => (
+            <div key={idx} className="mb-6">
+              <h4 className="text-lg text-gray-300 mb-2">{chatGroup.date}</h4>
+              <ul>
+                {chatGroup.chats.map((chat, index) => (
+                  <li key={index} className="relative flex justify-between items-center py-3">
+                    <span className="text-gray-200">{chat.name}</span>
+                    <div
+                      className="cursor-pointer text-gray-400 hover:text-gray-200"
+                      onClick={() => {
+                        setSelectedChat(chat);
+                        setDropdownVisible(!dropdownVisible);
+                      }}
+                    >
+                      ⋮
+                    </div>
+
+                    {selectedChat === chat && dropdownVisible && (
+                      <div
+                        ref={dropdownRef}
+                        className="absolute left-full top-0 ml-2 bg-white text-gray-900 p-2 rounded-lg shadow-md w-36"
+                      >
+                        <div
+                          className="cursor-pointer py-1 px-2 hover:bg-gray-100"
+                          onClick={() => handleChatOption(chat, "rename")}
+                        >
+                          Rename
+                        </div>
+                        <div
+                          className="cursor-pointer py-1 px-2 hover:bg-gray-100"
+                          onClick={() => handleChatOption(chat, "delete")}
+                        >
+                          Delete
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        ) : (
+          <p className="text-gray-500">No chats yet!</p>
+        )}
+
+        <div className="mt-6">
+          <input
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            id="pdf-upload"
+            onChange={handleUploadPdf}
+          />
+          <label
+            htmlFor="pdf-upload"
+            className="w-full text-center py-3 px-6 bg-gray-700 text-white rounded-lg cursor-pointer shadow-md hover:bg-gray-600 transition duration-200"
+          >
+            Upload PDF
+          </label>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Sidebar;
+
+
+
+process_pdf.py : 
+
+import os
+import pickle
+import fitz
+from pathlib import Path
+import torch
+import asyncio
+
+from colbert.modeling.checkpoint import Checkpoint
+from colbert.infra.config import ColBERTConfig
+from colbert.indexer import Indexer
+from configs.paths import TEXT_STORAGE_PATH
+
+# ColBERT paths
+UPLOAD_FOLDER = "/home/noyo/web2pdf/services/uploads"
+COLBERT_INDEX_PATH = "/home/noyo/web2pdf/services/experiments/default/indexes/colbert_index"
+CHECKPOINT_PATH = "/home/noyo/web2pdf/models/colbertv2.0"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+colbert_config = ColBERTConfig(
+    nbits=2,
+    doc_maxlen=140,
+    kmeans_niters=4,
+    nway=2,
+    gpus=1
+)
+
+checkpoint = Checkpoint(CHECKPOINT_PATH, colbert_config=colbert_config)
+
+class PDFProcessor:
+    def __init__(self, chunk_size=512, chunk_overlap=50):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.text_chunks = []
+
+    async def extract_text(self, pdf_path):
+        """Asynchronously extract text from the PDF using PyMuPDF."""
+        doc = await asyncio.to_thread(fitz.open, pdf_path)
+        texts = []
+
+        for page in doc:
+            texts.append(page.get_text("text").replace("\n", " ").strip())
+
+        return " ".join(texts)
+
+    def chunk_text(self, text):
+        """Split the text into overlapping chunks."""
+        words = text.split(" ")
+        chunks = []
+        i = 0
+        total = len(words)
+
+        while i < total:
+            chunk = " ".join(words[i:i + self.chunk_size])
+            chunks.append(chunk)
+            i += self.chunk_size - self.chunk_overlap
+
+        return chunks
+
+    async def process_and_store(self, pdf_path):
+        """
+        Extracts, chunks, and indexes text using ColBERT.
+        This is a synchronous operation for backend processing.
+        """
+        # 1. Extract text from PDF
+        text = await self.extract_text(pdf_path)
+
+        # 2. Chunk the text
+        chunks = self.chunk_text(text)
+
+        # 3. Save per‐PDF chunks to disk
+        pdf_filename = Path(pdf_path).stem
+        text_chunks_file = f"{pdf_filename}_text_chunks.pkl"
+        text_chunks_path = os.path.join(UPLOAD_FOLDER, text_chunks_file)
+
+        with open(text_chunks_path, "wb") as f:
+            pickle.dump(chunks, f)
+
+        # 4. Merge into global text storage
+        if os.path.exists(TEXT_STORAGE_PATH):
+            with open(TEXT_STORAGE_PATH, "rb") as f:
+                self.text_chunks = pickle.load(f)
+
+        self.text_chunks.extend(chunks)
+        with open(TEXT_STORAGE_PATH, "wb") as f:
+            pickle.dump(self.text_chunks, f)
+
+        # 5. Index all stored chunks using ColBERT
+        os.makedirs(COLBERT_INDEX_PATH, exist_ok=True)
+        indexer = Indexer(checkpoint=CHECKPOINT_PATH)
+
+        await asyncio.to_thread(
+            indexer.index,
+            name=COLBERT_INDEX_PATH,
+            collection=self.text_chunks,
+            overwrite=True
+        )
+
+
+Chatbot.js: 
+
+import React, { useState, useEffect } from "react";
+import Sidebar from "../components/Sidebar";
+import Conversation from "../components/Conversation";
+import { useAuth } from "../context/AuthContext";
+import axios from "axios";
+import { AiOutlineArrowUp } from "react-icons/ai";
+
+const Chatbot = () => {
+  const { user, logout } = useAuth();
+  const [chats, setChats] = useState([]);
+  const [currentChat, setCurrentChat] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [userInput, setUserInput] = useState("");
+  const [pdfMode, setPdfMode] = useState(false);
+  const [pdfList, setPdfList] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState({
+    id: null,
+    filename: null,
+    chunk_filename: null,
+  });
+
+    // ➊ Load chats once
+    useEffect(() => {
+      async function loadChats() {
+        const { data } = await axios.get("/chats", {
+          headers: { Authorization: `Bearer ${user.token}` },
+        });
+        setChats(data);
+      }
+      loadChats();
+    }, [user.token]);
+
+    // ➋ Whenever currentChat changes, fetch its messages
+  useEffect(() => {
+      if (!currentChat) {
+        setMessages([]);
+        return;
+      }
+      async function loadHistory() {
+        const { data } = await axios.get(
+          `/chats/${currentChat.id}/messages`,
+          { headers: { Authorization: `Bearer ${user.token}` } }
+        );
+        setMessages(data.messages);
+      }
+      loadHistory();
+    }, [currentChat, user.token]);
+
+  // Fetch PDFs each time PDF mode is enabled
+  useEffect(() => {
+    const fetchUserPdfs = async () => {
+      if (!pdfMode) return;
+      try {
+        const { data } = await axios.get("/pdfs", {
+          headers: { Authorization: `Bearer ${user.token}` },
+        });
+        setPdfList(data.pdfs || []);
+      } catch (error) {
+        console.error("fetch PDFs error:", error.response?.data || error.message);
+        setPdfList([]);
+      }
+    };
+    fetchUserPdfs();
+  }, [pdfMode, user.token]);
+
+  const handlePdfSelect = async (e) => {
+    const fileId = e.target.value;
+    if (!fileId) return;
+    try {
+      const { data } = await axios.post(`/select_pdf?file_id=${fileId}`, null, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+      const selected = pdfList.find((f) => f.id === parseInt(fileId));
+      setSelectedPdf({
+        id: selected.id,
+        filename: selected.filename,
+        chunk_filename: data.chunk_filename,
+      });
+    } catch (e) {
+      console.error("selectPDF error:", e.response?.data || e.message);
+      setSelectedPdf({ id: null, filename: null, chunk_filename: null });
+    }
+  };
+
+
+  // 4️⃣ Send message & receive bot reply
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!userInput.trim()) return;
+
+    setLoading(true);
+
+    let chatId = currentChat?.id;
+    // ➊ If no chat yet, create one
+    if (!chatId) {
+      try {
+        const { data: chatData } = await axios.post(
+          "/create_chats",
+          {
+            user_id: user.id,
+            chat_name: userInput,         // use first query as chat name
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${user.token}`,
+            },
+          }
+        );
+        // build new chat object
+        const newChat = {
+          id: chatData.chat_id,
+          chat_name: chatData.chat_name,
+          messages: [],
+        };
+        setChats((prev) => [...prev, newChat]);
+        setCurrentChat(newChat);
+        chatId = chatData.chat_id;
+      } catch (err) {
+        console.error("Create chat error:", err.response?.data || err.message);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // ➋ Now send the user’s message to /chat
+    const payload = {
+      query: userInput,
+      mode: pdfMode ? "pdf" : "general",
+      chat_id: chatId,
+      chunk_filename: selectedPdf?.chunk_filename || null,
+    };
+    console.log("▶️ Sending to /chat:", payload);
+
+    try {
+      const { data } = await axios.post("/chat", payload, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`,
+        },
+      });
+
+      // Append messages to the current chat
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  { sender: "user", message: userInput, timestamp: new Date().toISOString() },
+                  { sender: "bot", message: data.response, timestamp: new Date().toISOString() },
+                ],
+              }
+            : chat
+        )
+      );
+      // Also update currentChat to trigger re-render
+      setCurrentChat((prev) =>
+        prev?.id === chatId
+          ? {
+              ...prev,
+              messages: [
+                ...prev.messages,
+                { sender: "user", message: userInput, timestamp: new Date().toISOString() },
+                { sender: "bot", message: data.response, timestamp: new Date().toISOString() },
+              ],
+            }
+          : prev
+      );
+      setUserInput("");
+    } catch (err) {
+      console.error("Message send error:", err.response?.data || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  return (
+    <div className="flex flex-col h-screen">
+      <Sidebar
+        user={user}
+        chats={chats}
+        setChats={setChats}
+        setCurrentChat={setCurrentChat}
+      />
+
+      <div className="flex flex-grow flex-col bg-gray-50">
+        <div className="flex justify-between items-center p-4 border-b bg-white">
+          <h1 className="text-xl font-semibold">Chatbot</h1>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={pdfMode}
+                onChange={() => {
+                  setPdfMode(!pdfMode);
+                  setSelectedPdf({ id: null, filename: null, chunk_filename: null });
+                }}
+                className="form-checkbox"
+              />
+              <span>PDF Mode</span>
+            </label>
+
+            {pdfMode && (
+              <select
+                value={selectedPdf.id || ""}
+                onChange={handlePdfSelect}
+                className="border rounded px-2 py-1"
+              >
+                <option value="" disabled>
+                  {pdfList.length === 0 ? "No PDFs found" : "Select PDF..."}
+                </option>
+                {pdfList.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.filename}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={logout}
+              className="bg-red-600 text-white px-3 py-1 rounded"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+          {/* ➍ Render our new Conversation component */}
+           <Conversation messages={messages} />
+
+        <form
+          onSubmit={handleSendMessage}
+          className="flex items-center p-4 bg-white border-t space-x-2"
+        >
+          <textarea
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            rows={1}
+            placeholder="Ask something..."
+            className="flex-grow resize-none px-4 py-2 border rounded focus:outline-none focus:ring"
+            disabled={loading}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage(e);
+              }
+            }}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-700 disabled:opacity-50"
+          >
+            <AiOutlineArrowUp size={20} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Chatbot;
+
