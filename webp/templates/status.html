@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generating PDF...</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container" id="status">
+        <h2>Status: <span id="status-text">Starting...</span></h2>
+        <div id="loader"></div>
+    </div>
+
+    <script>
+        const taskId = "{{ task_id }}";
+
+        function checkStatus() {
+            fetch('/status/' + taskId)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('status-text').innerText = data.status;
+                    if (data.done) {
+                        document.getElementById('status').innerHTML = `
+                            <h2>PDF Ready!</h2>
+                            <a href="/download/${taskId}" class="btn">Download PDF</a>
+                        `;
+                    } else {
+                        setTimeout(checkStatus, 2000);
+                    }
+                });
+        }
+
+        checkStatus();
+    </script>
+</body>
+</html>
+
