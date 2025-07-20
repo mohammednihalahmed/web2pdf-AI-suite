@@ -3,13 +3,12 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.db
-*.sqlite3
 
 # Virtual environments
 venv*/
 ENV/
 env/
+venv310/
 
 # Node.js
 node_modules/
@@ -28,6 +27,8 @@ Thumbs.db
 *.env
 *.env.local
 *.env.*
+
+# Sensitive tokens
 huggface_token.txt
 
 # Build and cache
@@ -35,3 +36,8 @@ dist/
 build/
 .cache/
 
+# Ignore large model files
+models/
+
+# Ignore generated PDFs and temporary files
+webp/tmp_pdf_pages/
