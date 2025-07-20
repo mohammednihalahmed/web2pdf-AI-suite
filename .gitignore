@@ -41,3 +41,4 @@ models/
 
 # Ignore generated PDFs and temporary files
 webp/tmp_pdf_pages/
+huggface_token.txt
