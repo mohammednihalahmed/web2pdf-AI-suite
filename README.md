@@ -189,13 +189,13 @@ python create_db.py
 
 ## 📜 Screenshots
 ### Login Page
-![Login Page](static/images/login_screenshot.png)
+![Login Page](login.jpg)
 
-### Admin Dashboard
-![Admin Dashboard](static/images/admin_dashboard_screenshot.png)
+### Sidebar
+![Sidebar](sidebar.jpg)
 
-### User Dashboard
-![User Dashboard](static/images/user_dashboard_screenshot.png)
+### Chat Interface
+![Chat](chat.jpg)
 
 ---
 
