@@ -198,15 +198,15 @@ python create_db.py
 ![Chat](chat.jpg)
 
 ### Journal 
-![Chat](chat.jpg)
+![Journal](journal.jpeg)
 
-### acknowledgement certificate
-![Chat](chat.jpg)
+### Acknowledgement certificate
+![certificate](certificate.jpeg)
 
 ---
 
 ## 👨‍💻 Author
 
-**Nooman Yousuf**  
+**Nooman Yousuf**,**Mohd hashim qureshi**,**Mohammed Nihal Ahmed** 
 📧 nooman144yousuf@gmail.com  
 🔗 [GitHub](https://github.com/nooman57554)
