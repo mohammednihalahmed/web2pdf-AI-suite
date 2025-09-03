@@ -197,6 +197,12 @@ python create_db.py
 ### Chat Interface
 ![Chat](chat.jpg)
 
+### Journal 
+![Chat](chat.jpg)
+
+### acknowledgement certificate
+![Chat](chat.jpg)
+
 ---
 
 ## 👨‍💻 Author
